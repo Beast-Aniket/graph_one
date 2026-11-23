@@ -1,0 +1,105 @@
+GRAPHONE / FRONTIERATLAS - SETUP AND RUN GUIDE
+================================================
+
+This backend uses the PRD stack only:
+Python + FastAPI + httpx + Celery/Redis + PostgreSQL/pgvector + MinIO + Neo4j.
+It does NOT use WAMP, PHP, Apache, or MySQL.
+
+PREREQUISITES
+-------------
+1. Install Docker Desktop and make sure it is running.
+2. Install Python 3.11+ if you want to run tests outside containers.
+3. From this project folder, copy .env.example to .env.
+4. Change API_KEY, S3_SECRET_KEY, and NEO4J_PASSWORD in .env before any shared deployment.
+
+START THE COMPLETE STACK
+------------------------
+PowerShell:
+  Copy-Item .env.example .env
+  docker compose up --build -d
+
+Wait until all services are healthy:
+  docker compose ps
+
+Initialize database and seed source inventory:
+  docker compose exec api python -m graphone.scripts.init_db
+  docker compose exec api python -m graphone.scripts.seed_sources
+
+OPEN SERVICES
+-------------
+API/OpenAPI:      http://localhost:8000/docs
+API health:       http://localhost:8000/api/v1/health
+MinIO console:    http://localhost:9001
+Neo4j Browser:    http://localhost:7474
+PostgreSQL:       localhost:5432
+Redis:            localhost:6379
+
+The default Docker development database user/password is graphone/graphone.
+Change it and all secrets before production.
+
+API AUTHENTICATION
+------------------
+All endpoints except health require this HTTP header:
+  X-API-Key: <the value of API_KEY in .env>
+
+Example PowerShell setup:
+  $headers = @{ 'X-API-Key' = 'your-api-key' }
+  Invoke-RestMethod http://localhost:8000/api/v1/health
+  Invoke-RestMethod http://localhost:8000/api/v1/sources -Headers $headers
+
+CONFIGURE AUTHORIZED SOURCES
+----------------------------
+Seeded sources are disabled templates so nothing is scraped without your approval.
+For each source, verify its permission/terms/robots policy and rate limit, then update it via
+POST /api/v1/sources or add your own source. Use RSS, JSON, or permitted HTML sources.
+
+Queue every enabled source:
+  Invoke-RestMethod http://localhost:8000/api/v1/crawl-jobs -Method POST -Headers $headers -ContentType 'application/json' -Body '{}'
+
+The Celery worker processes the queue. Follow activity:
+  docker compose logs -f worker
+
+LLM EXTRACTION (OPTIONAL BUT PRD-ALIGNED)
+------------------------------------------
+Put your provider keys in .env. The fallback order is:
+  1. Gemini Flash
+  2. Groq / Llama 3
+  3. DeepSeek
+
+The extractor sends semantic chunks, handles 429 and 413 responses, validates returned JSON, and does not invent unknown values.
+If no provider is configured or validated extraction cannot be produced, the source item remains reviewable rather than becoming a fabricated record.
+
+GOOGLE SHEETS EXPORT (OPTIONAL)
+-------------------------------
+1. Create a Google Sheet with these six tabs:
+   Startups, Products, Research Papers, Jobs, News, Entity Mapping Log.
+2. Copy integrations/google_apps_script.js into Apps Script and deploy it as an authenticated web app.
+3. Set GOOGLE_SHEETS_WEBHOOK_URL in .env.
+4. Call:
+   Invoke-RestMethod http://localhost:8000/api/v1/exports/google-sheets -Method POST -Headers $headers
+
+TESTS
+-----
+Create an isolated Python environment and install dependencies:
+  python -m venv .venv
+  .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+  .\.venv\Scripts\python.exe -m pytest -q
+
+STOP / RESET
+------------
+Stop services while keeping collected data:
+  docker compose down
+
+Remove services AND all Docker database, queue, raw-storage, and graph data:
+  docker compose down -v
+
+This reset is destructive. It does not affect the project files.
+
+PRODUCTION CHECKLIST
+--------------------
+- Use managed PostgreSQL with pgvector, Redis, object storage, and Neo4j where appropriate.
+- Inject secrets through a secret manager; never commit .env.
+- Run API/worker/beat as separate scalable deployments.
+- Use TLS, least-privilege database credentials, auth beyond the development API key, backups, monitoring, alerts, and log retention.
+- Keep crawl policies source-specific and comply with every data source's rules.
+

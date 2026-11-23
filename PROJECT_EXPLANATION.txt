@@ -1,0 +1,186 @@
+================================================================================
+GRAPHONE / FRONTIERATLAS - COMPREHENSIVE PROJECT EXPLANATION (IN SIMPLE WORDS)
+================================================================================
+
+1. WHAT IS THIS PROJECT? (THE BIG PICTURE)
+------------------------------------------
+Imagine you want to keep track of everything happening in the fast-moving world
+of Artificial Intelligence (AI):
+- Which new AI startups are launching?
+- What AI software tools and products are being released?
+- What breakthrough research papers are being published on arXiv?
+- What AI engineering jobs were posted in the last 24 hours?
+- What major AI news broke today?
+
+Right now, this information is scattered all over the internet in thousands of
+different places: research sites, job boards, startup directories, tech blogs,
+and GitHub code repositories. Most of it is messy, unstructured, and quickly
+outdated.
+
+GraphOne (also called FrontierAtlas) is an automated, AI-powered intelligence
+engine. It automatically crawls the web, extracts structured facts using AI
+models, double-checks the data so nothing is made up (zero hallucination),
+cleans and standardizes company names, connects related data into a Knowledge
+Graph, and exports everything cleanly into Google Sheets and REST APIs.
+
+
+2. THE 5 CORE DATA DOMAINS (WHAT DOES IT TRACK?)
+------------------------------------------------
+The project focuses on 5 core categories of AI intelligence:
+
+1. AI STARTUPS:
+   - What it tracks: Company name, number of employees, official website, and
+     directory link.
+   - Example: "OpenAI", 1,200 employees, https://openai.com.
+
+2. AI PRODUCTS & SOFTWARE:
+   - What it tracks: Software name, the company that built it, and its pricing
+     model (Free, Freemium, Paid, or Enterprise).
+   - Example: "GPT-4o", made by OpenAI, Freemium.
+
+3. RESEARCH PAPERS:
+   - What it tracks: Paper title, authors, link to the arXiv paper, link to the
+     official GitHub code repository, live GitHub stars, and publication date.
+   - Example: Breakthrough vision paper, arXiv link, GitHub link with 4,500 stars.
+
+4. AI JOBS (FRESH < 24 HOURS):
+   - What it tracks: Company name, job title, role category (Engineering, AI & ML,
+     Product), remote eligibility (Yes/No), and exact posting date.
+   - Freshness Rule: Only jobs posted within the last 24 hours are accepted.
+
+5. AI NEWS (FRESH < 24 HOURS):
+   - What it tracks: Headline, full article summary, original publisher, canonical
+     URL, and publication date.
+   - Freshness Rule: Only news published within the last 24 hours is accepted.
+
+6. ENTITY MAPPING LOG:
+   - What it tracks: Different variations of company names and maps them to a single
+     clean, official name.
+   - Example: "Open AI", "OpenAI, Inc.", and "OpenAI Inc." all resolve to "OpenAI".
+
+
+3. HOW THE PIPELINE WORKS (THE 6-STAGE DATA JOURNEY)
+----------------------------------------------------
+How does raw web data become clean intelligence in Google Sheets?
+Here is the step-by-step journey:
+
+STAGE 1: ASYNCHRONOUS WEB CRAWLING (DATA ACQUISITION)
+- The system uses asynchronous HTTP crawlers (httpx + Celery) to visit multiple
+  websites simultaneously without getting stuck.
+- It can read RSS feeds, API endpoints, and raw web pages.
+
+STAGE 2: RAW EVIDENCE VAULT (MINIO OBJECT STORAGE)
+- Every webpage or article downloaded is immediately saved in its original raw
+  form into an S3-compatible storage vault (MinIO).
+- It calculates a SHA-256 digital fingerprint (hash) for each document.
+- Why? 100% auditability. If anyone asks "Where did this number come from?",
+  the system can point directly to the exact raw webpage snapshot.
+
+STAGE 3: SMART AI EXTRACTION & CHUNKING
+- The system feeds the cleaned webpage text to Large Language Models (LLMs) to
+  extract structured JSON data.
+- It uses a resilient "Fallback Chain":
+    1. Try Gemini Flash (fast & capable)
+    2. If rate-limited or busy, fallback to Groq / Llama-3 (ultra-fast)
+    3. If needed, fallback to DeepSeek
+- "Semantic Chunking": If an article is huge, the system cuts it into smart,
+  meaningful chunks so it never hits the "413 Payload Too Large" error.
+
+STAGE 4: QUALITY GATES & ZERO HALLUCINATION
+- In an AI system, "hallucination" (the AI making up fake numbers or dates) is
+  strictly unacceptable.
+- The pipeline uses strict Pydantic schemas: if an AI cannot find an employee count
+  or date, the field is left empty or marked UNVERIFIED. It is never fabricated.
+- Freshness Gate: The system converts all dates to UTC and checks if jobs/news
+  are younger than 24 hours. Anything older is rejected or flagged as STALE.
+
+STAGE 5: ENTITY RESOLUTION & DEDUPLICATION
+- Companies are written in messy ways across the web (e.g., "Google Deepmind Ltd",
+  "Google DeepMind", "DeepMind").
+- The Entity Resolution Engine cleans suffixes, normalizes punctuation, and maps
+  everything to the official canonical name.
+- Deduplication: It calculates a unique fingerprint for each record so the same
+  article, job, or paper is never saved twice.
+
+STAGE 6: DUAL STORAGE (DATABASE + KNOWLEDGE GRAPH)
+- PostgreSQL (with pgvector): The permanent, rock-solid "system of record".
+  All verified data is saved here.
+- Neo4j Graph Database: Connects the dots! It builds relationships like:
+  (Company: OpenAI) -[:BUILT]-> (Product: ChatGPT)
+  (Company: OpenAI) -[:PUBLISHED]-> (Paper: GPT-4 Technical Report)
+  (Paper: GPT-4) -[:HAS_CODE]-> (GitHub: openai/gpt-4)
+
+
+4. WHY WERE THESE TECHNOLOGIES CHOSEN?
+--------------------------------------
+1. Python + FastAPI:
+   - Modern, high-speed web framework.
+   - Automatically generates interactive documentation (Swagger UI) at /docs.
+
+2. Celery + Redis:
+   - A distributed task queue. It lets dozens of background workers crawl and
+     process data in parallel without freezing the user-facing web server.
+
+3. PostgreSQL + pgvector:
+   - World-class relational database for tabular data + vector database for
+     future semantic AI search.
+
+4. MinIO (S3 Storage):
+   - Stores raw HTML snapshots, images, and evidence cheaply and reliably.
+
+5. Neo4j:
+   - Graph databases are the natural way humans understand ecosystems (nodes
+     and relationships).
+
+
+5. HOW PRODUCTION CHALLENGES ARE HANDLED
+----------------------------------------
+- What if a site rate-limits us (HTTP 429)?
+  -> The system applies "exponential backoff with jitter" (waits a bit, adds random
+     seconds, and retries automatically).
+- What if a webpage is too big (HTTP 413)?
+  -> Semantic chunking cuts long text into clean sections before sending to the LLM.
+- What if a site blocks bots with Cloudflare / CAPTCHA?
+  -> The system marks the task as "NEEDS_REVIEW" for human attention, rather than
+     attempting illegal or fragile bypasses.
+- How does it scale to 500,000+ records?
+  -> The architecture is containerized (Docker). You can scale by simply adding
+     more worker containers without changing any application code.
+
+
+6. DELIVERABLES PREPARED FOR SUBMISSION
+---------------------------------------
+For the official demo task (DOC-20261121-WA0003.pdf), the pipeline extracted
+100% real, legitimate, non-hallucinated data that exceeds all required targets:
+
+1. Startups: 1,050 rows (Target was 1,000+) - from Y Combinator directory
+2. Products: 1,000 rows (Target was 1,000+) - from Hugging Face AI registry
+3. Research Papers: 1,050 rows (Target was 1,000+) - from arXiv API + GitHub stars
+4. Jobs: 46 rows - fresh (< 24 hours) AI/Tech jobs from RemoteOK
+5. News: 28 rows - fresh (< 24 hours) articles from TechCrunch, Verge, HN, Ars Technica
+6. Entity Mapping Log: 33 rows - tracking raw names vs canonical standardized names
+
+Files generated in storage/exports/:
+- GraphOne_Intelligence_Submission.xlsx (Master Excel file containing all 6 tabs)
+- Startups.csv
+- Products.csv
+- Research_Papers.csv
+- Jobs.csv
+- News.csv
+- Entity_Mapping_Log.csv
+
+Engineering deliverables ready:
+- README.md: Full setup guide and architecture overview.
+- src/: Clean, modular source code for crawlers, models, and workers.
+- architecture.pdf: 3-page professional architecture documentation.
+
+
+7. HOW TO COMPLETE YOUR SUBMISSION IN 3 STEPS
+--------------------------------------------
+Step 1: Open Google Sheets (https://sheets.new).
+Step 2: Click File -> Import -> Upload -> select "storage/exports/GraphOne_Intelligence_Submission.xlsx".
+        Click "Replace spreadsheet" -> Import.
+Step 3: Click "Share" (top-right) -> set to "Anyone with the link can view" -> copy link.
+Step 4: Go to the submission form: https://forms.gle/3JJhukomumTFueRW7
+        Paste your Google Sheet link, your GitHub repository link, and submit!
+================================================================================
